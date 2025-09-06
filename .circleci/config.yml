@@ -1,0 +1,134 @@
+# CircleCI config to build and scan MERN chat app using Docker, Trivy, and SonarQube, with Slack notifications
+
+version: 2.1
+
+# 🌐 Orbs: Prebuilt reusable CircleCI packages
+orbs:
+  docker: iamanonymous419/docker@1.0.0        # Your custom Docker orb (login, build, tag, push)
+  trivy: iamanonymous419/trivy@1.0.0          # Your Trivy orb for security scanning
+  sonar: iamanonymous419/sonar@1.0.0          # Your Sonar orb for static code analysis
+  slack: circleci/slack@5.1.1                # ✅ Official Slack orb for notifications
+
+# 🖥️ Define a reusable executor using a full VM with Docker pre-installed
+executors:
+  docker-executor:
+    machine:
+      image: ubuntu-2204:current              # Ubuntu VM for Docker operations
+    working_directory: ~/repo                 # Working directory for all jobs
+
+# 🏷️ Parameter used for tagging Docker images (e.g., build-42)
+parameters:
+  image_tag:
+    type: string
+    default: build-<< pipeline.number >>
+
+# 🛠️ Job: Build and scan the frontend (client)
+jobs:
+  build-client:
+    executor: docker-executor
+    steps:
+      - checkout                              # ⬇️ Clone the repo code
+
+      - docker/login:                         # 🔐 Login to DockerHub
+          username: $DOCKERHUB_USERNAME
+          password: DOCKERHUB_PASSWORD
+
+      - docker/build:                         # 🏗️ Build the client Docker image
+          image-name: $DOCKERHUB_USERNAME/chat-client
+          tag: << pipeline.parameters.image_tag >>
+          dockerfile-path: ./frontend/Dockerfile
+          build-context: ./frontend
+
+      - docker/tag:                           # 🏷️ Tag the image as `latest`
+          image-name: $DOCKERHUB_USERNAME/chat-client
+          old-tag: << pipeline.parameters.image_tag >>
+          new-tag: latest
+
+      - docker/push:                          # 📤 Push the `latest` tag to DockerHub
+          image-name: $DOCKERHUB_USERNAME/chat-client
+          tag: latest
+
+      - trivy/install                         # ⚙️ Install Trivy CLI for scanning
+
+      - trivy/scan:                           # 🔍 Scan client image for vulnerabilities
+          image: $DOCKERHUB_USERNAME/chat-client:latest
+          output: client-scan.txt
+          format: table
+          severity: HIGH,CRITICAL
+
+      - store_artifacts:                      # 💾 Save scan report as artifact
+          path: trivy-reports/client-scan.txt
+          destination: trivy-client-report
+
+# 🛠️ Job: Build and scan the backend (server)
+  build-server:
+    executor: docker-executor
+    steps:
+      - checkout
+
+      - docker/login:
+          username: $DOCKERHUB_USERNAME
+          password: DOCKERHUB_PASSWORD
+
+      - docker/build:
+          image-name: $DOCKERHUB_USERNAME/chat-server
+          tag: << pipeline.parameters.image_tag >>
+          dockerfile-path: ./backend/Dockerfile
+          build-context: ./backend
+
+      - docker/tag:
+          image-name: $DOCKERHUB_USERNAME/chat-server
+          old-tag: << pipeline.parameters.image_tag >>
+          new-tag: latest
+
+      - docker/push:
+          image-name: $DOCKERHUB_USERNAME/chat-server
+          tag: latest
+
+      - trivy/install
+
+      - trivy/scan:
+          image: $DOCKERHUB_USERNAME/chat-server:latest
+          output: server-scan.txt
+          format: table
+          severity: HIGH,CRITICAL
+
+      - store_artifacts:
+          path: trivy-reports/server-scan.txt
+          destination: trivy-server-report
+
+# ✅ Slack notification job
+  notify-slack:
+    executor: docker-executor
+    steps:
+      - slack/notify:
+          event: pass
+          template: basic_success_1
+      - slack/notify:
+          event: fail
+          template: basic_fail_1
+
+# 🚀 Workflow: Controls the order in which jobs run
+workflows:
+  build-and-deploy:
+    jobs:
+      - sonar/scan:                           # ✅ Run SonarQube scan first
+          project_key: iamanonymous419_streamify
+          organization: iamanonymous419
+          sources: .
+          exclusions: "**/node_modules/**,**/dist/**,**/build/**"
+          host_url: https://sonarcloud.io
+          sonar_token: SONAR_TOKEN            # 🔐 Secure token stored in project env vars
+
+      - build-client:                         # 🧱 Build client only after Sonar
+          requires:
+            - sonar/scan
+
+      - build-server:                         # 🧱 Build server only after Sonar
+          requires:
+            - sonar/scan
+
+      - notify-slack:                         # 📢 Slack notification at end
+          requires:
+            - build-client
+            - build-server
