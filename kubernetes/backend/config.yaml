@@ -1,0 +1,12 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: streamify
+data:
+  PORT: "5001"
+  MONGO_URI: "mongodb://mongoadmin:securepass@mongodb-service:27017/streamify?authSource=admin"
+  STEAM_API_KEY: YOUR_STEAM_API_KEY
+  NODE_ENV: "production"
+

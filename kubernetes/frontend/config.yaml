@@ -1,0 +1,9 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: streamify
+data:
+  VITE_STREAM_API_KEY: YOUR_STREAM_API_KEY
+
