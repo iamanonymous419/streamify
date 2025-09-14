@@ -9,6 +9,10 @@ RUN npm install
 
 COPY . .
 
+# Add build argument and environment variable for Vite
+ARG VITE_STREAM_API_KEY
+ENV VITE_STREAM_API_KEY=$VITE_STREAM_API_KEY
+
 RUN npm run build
 
 # Production stage

@@ -4,7 +4,7 @@ version: 2.1
 
 # 🌐 Orbs: Prebuilt reusable CircleCI packages
 orbs:
-  docker: iamanonymous419/docker@1.0.0        # Your custom Docker orb (login, build, tag, push)
+  docker: iamanonymous419/docker@2.0.0        # Your custom Docker orb (login, build, tag, push)
   trivy: iamanonymous419/trivy@1.0.0          # Your Trivy orb for security scanning
   sonar: iamanonymous419/sonar@1.0.0          # Your Sonar orb for static code analysis
   slack: circleci/slack@5.1.1                # ✅ Official Slack orb for notifications
@@ -38,6 +38,7 @@ jobs:
           tag: << pipeline.parameters.image_tag >>
           dockerfile-path: ./frontend/Dockerfile
           build-context: ./frontend
+          build-args: "VITE_STREAM_API_KEY=${VITE_STREAM_API_KEY}"
 
       - docker/tag:                           # 🏷️ Tag the image as `latest`
           image-name: $DOCKERHUB_USERNAME/chat-client
