@@ -1,28 +1,46 @@
-# CircleCI config to build and scan MERN chat app using Docker, Trivy, and SonarQube, with Slack notifications
+# =============================================================================
+# CIRCLECI CONFIGURATION FOR MERN CHAT APP
+# =============================================================================
+# Build and scan MERN chat app using Docker, Trivy, and SonarQube with Slack notifications
 
 version: 2.1
 
-# 🌐 Orbs: Prebuilt reusable CircleCI packages
+# =============================================================================
+# ORBS CONFIGURATION
+# =============================================================================
+# Prebuilt reusable CircleCI packages
 orbs:
-  docker: iamanonymous419/docker@2.0.0        # Your custom Docker orb (login, build, tag, push)
+  docker: iamanonymous419/docker@5.0.0        # Your custom Docker orb (login, build, tag, push)
   trivy: iamanonymous419/trivy@1.0.0          # Your Trivy orb for security scanning
   sonar: iamanonymous419/sonar@1.0.0          # Your Sonar orb for static code analysis
   slack: circleci/slack@5.1.1                # ✅ Official Slack orb for notifications
 
-# 🖥️ Define a reusable executor using a full VM with Docker pre-installed
+# =============================================================================
+# EXECUTOR CONFIGURATION
+# =============================================================================
+# Define a reusable executor using a full VM with Docker pre-installed
 executors:
   docker-executor:
     machine:
       image: ubuntu-2204:current              # Ubuntu VM for Docker operations
     working_directory: ~/repo                 # Working directory for all jobs
 
-# 🏷️ Parameter used for tagging Docker images (e.g., build-42)
+# =============================================================================
+# PIPELINE PARAMETERS
+# =============================================================================
+# Parameter used for tagging Docker images (e.g., build-42)
 parameters:
   image_tag:
     type: string
     default: build-<< pipeline.number >>
 
-# 🛠️ Job: Build and scan the frontend (client)
+# =============================================================================
+# JOB DEFINITIONS
+# =============================================================================
+
+# =============================================================================
+# CLIENT BUILD AND SCAN JOB
+# =============================================================================
 jobs:
   build-client:
     executor: docker-executor
@@ -39,6 +57,10 @@ jobs:
           dockerfile-path: ./frontend/Dockerfile
           build-context: ./frontend
           build-args: "VITE_STREAM_API_KEY=${VITE_STREAM_API_KEY}"
+
+      - docker/push:                          # 📤 Push the build number tag to DockerHub
+          image-name: $DOCKERHUB_USERNAME/chat-client
+          tag: << pipeline.parameters.image_tag >>
 
       - docker/tag:                           # 🏷️ Tag the image as `latest`
           image-name: $DOCKERHUB_USERNAME/chat-client
@@ -61,7 +83,9 @@ jobs:
           path: trivy-reports/client-scan.txt
           destination: trivy-client-report
 
-# 🛠️ Job: Build and scan the backend (server)
+# =============================================================================
+# SERVER BUILD AND SCAN JOB
+# =============================================================================
   build-server:
     executor: docker-executor
     steps:
@@ -76,6 +100,10 @@ jobs:
           tag: << pipeline.parameters.image_tag >>
           dockerfile-path: ./backend/Dockerfile
           build-context: ./backend
+
+      - docker/push:                          # 📤 Push the build number tag to DockerHub
+          image-name: $DOCKERHUB_USERNAME/chat-server
+          tag: << pipeline.parameters.image_tag >>
 
       - docker/tag:
           image-name: $DOCKERHUB_USERNAME/chat-server
@@ -98,7 +126,43 @@ jobs:
           path: trivy-reports/server-scan.txt
           destination: trivy-server-report
 
-# ✅ Slack notification job
+# =============================================================================
+# KUBERNETES MANIFEST UPDATE JOB
+# =============================================================================
+  update-manifests:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+
+      # Update backend image tag
+      - run:
+          name: Update backend image tag
+          command: |
+            sed -i "s|anonymous292009/chat-server:.*|anonymous292009/chat-server:<< pipeline.parameters.image_tag >>|" kubernetes/backend/dep.yaml
+
+      # Update frontend image tag
+      - run:
+          name: Update frontend image tag
+          command: |
+            sed -i "s|anonymous292009/chat-client:.*|anonymous292009/chat-client:<< pipeline.parameters.image_tag >>|" kubernetes/frontend/dep.yaml
+
+      # Commit and push changes back to GitHub
+      - run:
+          name: Commit updated manifests
+          command: |
+            git config --global user.email "ci-bot@circleci.com"
+            git config --global user.name "CircleCI Bot"
+
+            git add kubernetes/backend/dep.yaml kubernetes/frontend/dep.yaml
+            git commit -m "chore(ci): update image tags to << pipeline.parameters.image_tag >> [skip ci]" || echo "No changes to commit"
+
+            # Push using token
+            git push https://$GITHUB_TOKEN@github.com/iamanonymous419/streamify.git HEAD:main
+
+# =============================================================================
+# SLACK NOTIFICATION JOB
+# =============================================================================
   notify-slack:
     executor: docker-executor
     steps:
@@ -109,7 +173,10 @@ jobs:
           event: fail
           template: basic_fail_1
 
-# 🚀 Workflow: Controls the order in which jobs run
+# =============================================================================
+# WORKFLOW CONFIGURATION
+# =============================================================================
+# Controls the order in which jobs run
 workflows:
   build-and-deploy:
     jobs:
@@ -129,7 +196,11 @@ workflows:
           requires:
             - sonar/scan
 
-      - notify-slack:                         # 📢 Slack notification at end
+      - update-manifests:                    # 📝 Update manifests after both builds
           requires:
             - build-client
             - build-server
+
+      - notify-slack:                         # 📢 Slack notification at end
+          requires:
+            - update-manifests
