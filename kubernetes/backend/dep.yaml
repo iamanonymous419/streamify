@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: anonymous292009/chat-server:latest
+          image: anonymous292009/chat-server:build-12
           ports:
             - containerPort: 5001
           envFrom:

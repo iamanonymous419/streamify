@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: anonymous292009/chat-client:latest
+          image: anonymous292009/chat-client:build-12
           ports:
             - containerPort: 80
           envFrom:
